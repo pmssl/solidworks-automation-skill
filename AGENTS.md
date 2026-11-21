@@ -4,7 +4,7 @@
 
 当用户要求创建、修改或重建 SolidWorks 三维零件时：
 
-1. 默认使用 `solidworks-parametric` Skill。
+1. 默认使用本仓库的 SolidWorks 原生建模 Skill。
 2. 优先使用项目中已验证的 SolidWorks 原生 Python/COM 能力库执行建模；使用 Skill CLI 或直接运行原生 Python 脚本。
 3. 必须采用原生草图、驱动尺寸、几何约束及参数化特征。
 4. 禁止使用 `solidworks_create_basic_part` 代替逐步建模。
@@ -18,6 +18,6 @@
 12. 完成后保存原生 SolidWorks 文件，并报告文件路径、主要尺寸、特征树及验证结果。
 13. 扩展能力时先完善原生能力库、单元测试和真实临时 Part 回归。
 
-详细工具调用流程统一由 `solidworks-parametric` Skill 维护，不在 `AGENTS.md` 中重复实现。
+详细工具调用流程见 references/parametric-workflow.md。
 
 这些规则仅适用于本项目的 SolidWorks 建模任务。

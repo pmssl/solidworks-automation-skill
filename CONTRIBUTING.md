@@ -108,11 +108,11 @@ solidworks-automation-skill/
 ├── scripts/              # 核心 Python 模块
 │   ├── sw_connect.py    # 连接和文档管理
 │   ├── sw_part.py       # 零件建模 API
-│   ├── sw_assembly.py   # 装配体 API
-│   ├── sw_drawing.py    # 工程图 API
+│   ├── sw_skill_session.py # 分步建模 CLI
+│   ├── sw_review.py     # 几何和交付复核
 │   └── sw_export.py     # 文件导出 API
 ├── references/          # API 参考文档
-├── examples/            # 示例代码
+├── tests/               # 单元和实机回归测试
 ├── README.md            # 项目说明
 └── CONTRIBUTING.md      # 本文件
 ```
@@ -123,7 +123,7 @@ solidworks-automation-skill/
 
 1. 在对应的 `scripts/sw_*.py` 文件中添加函数
 2. 在 `references/` 中更新相关文档
-3. 在 `examples/` 中添加使用示例
+3. 在 `tests/` 中验证受影响的建模能力
 4. 更新 README.md
 
 ## 需要帮助?

@@ -26,16 +26,16 @@ python scripts/sw_skill_session.py --help
 
 > 用 $solidworks-automation 建一个 50 × 30 × 10 mm 的矩形板，保留可编辑的草图和拉伸特征，保存到当前项目的 output 目录。保存前核对草图状态、实体数量和尺寸。
 
-手动调用 CLI 时，可按 `new_part → begin → rectangle → dimension / auto_define → finish → extrude → model_state → save_part` 执行。每条命令返回 JSON。逐步操作使用 `begin` 返回的 `session_id`，会话记录写入 Skill 目录的 `.runtime/solidworks-sessions/`。SolidWorks 重启后需重新开始会话。完整的 PowerShell 示例和保存命令见[原生参数化指南](subskills/solidworks-parametric/GUIDE.md#跨项目使用逐步-cli)。
+手动调用 CLI 时，可按 `new_part → begin → rectangle → dimension / auto_define → finish → extrude → model_state → save_part` 执行。每条命令返回 JSON。逐步操作使用 `begin` 返回的 `session_id`，会话记录写入 Skill 目录的 `.runtime/solidworks-sessions/`。SolidWorks 重启后需重新开始会话。完整的 PowerShell 示例和保存命令见[原生参数化指南](references/parametric-workflow.md#跨项目使用逐步-cli)。
 
 | 任务 | 入口 |
 |---|---|
 | 原生草图、尺寸、约束、拉伸、旋转、扫描、放样 | [分步 Python CLI](scripts/sw_skill_session.py) |
-| 孔槽、配置、装配、工程图和导出 | [Skill 工作流和原生脚本索引](SKILL.md#核心工作流) |
+| 孔槽、曲面、配置和零件导出 | [原生脚本索引](references/native-capability-catalog.md) |
 | 核对孔径、孔轴和沉孔分段 | CLI 的 `measure_geometry`，或 [审查脚本](scripts/sw_review.py) |
-| 查看已验证和试点能力 | [能力清单](capabilities.yaml)与[原生能力目录](subskills/solidworks-parametric/references/native-capability-catalog.md) |
+| 查看已验证和试点能力 | [能力清单](capabilities.yaml) |
 
-原生零件保存为 `.SLDPRT` 并保留特征树。交付前检查重建状态、实体数量和关键几何。专项操作说明见[指南索引](SUBSKILLS.md)。
+原生零件保存为 `.SLDPRT` 并保留特征树。交付前检查重建状态、实体数量和关键几何。
 
 ## 验证与许可
 

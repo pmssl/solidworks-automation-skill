@@ -55,7 +55,7 @@
 
 ## 2. 原生文档及其他操作
 
-通过 CLI 的 document、new_part、save_part、model_state 查看、新建、保存和检查零件。打开、关闭、导出和审查使用 sw_session.py、sw_export.py、sw_review.py。孔槽、配置、命名尺寸、属性与 Pack and Go 分别使用 sw_hole_features.py、sw_document_data.py 和 sw_delivery.py。
+通过 CLI 的 document、new_part、save_part、model_state 查看、新建、保存和检查零件。打开、关闭、导出和审查使用 sw_session.py、sw_export.py、sw_review.py。孔槽、配置、命名尺寸和属性使用 sw_hole_features.py 与 sw_document_data.py。
 
 ## 3. 原生 Script API：草图
 
@@ -214,30 +214,6 @@
 - `equation_rows` / `evaluate_equations` / `global_variable_value`：逐行值、类型、配置作用域、禁用计数和重建检查；
 - 已真机验证 `DepthGV=18mm` 驱动拉伸 `D1`，实体包络从 10 mm 深度变为 18 mm；逐行 `Value` 后 `Status` 分别为 0/1。
 
-## 7. 专项原生能力
-
-| 能力 | 路由 |
-|---|---|
-| 标准外啮合渐开线直齿轮 | `scripts/sw_gear.py` + `references/gears.md`，已有 `pilot` 实现；稳定化验收暂缓，不计入当前实施主线 |
-| 真实螺纹孔 | `solidworks-threaded-holes` |
-| 高级圆角/倒角 CNC 件 | `solidworks-fillet-chamfer-cnc` |
-| 钣金、焊件 | 根 Skill 高级能力门禁，现有 `pilot` 保留；生产级专项能力暂缓，不计入当前实施主线 |
-| 工程图 | `solidworks-engineering-drawing` |
-| 装配体与运动 | 根 Skill 的装配/Motion 工作流 |
-
-专项 Skill 可以细化设计规则，但仍必须遵守本 Skill 的活动文档、原生历史、重建、实体和保存验证底线。
-
-### 当前暂缓的专项能力
-
-根据 2026-11-20 的项目范围确认，以下能力保留现有代码、文档和试验结果，但暂不继续开发或稳定化验收，也不计入“剩余原生能力”数量：
-
-- 模具分型专项能力组；
-- 生产级钣金专项能力组；
-- 生产级焊件专项能力组；
-- 已有齿轮 `pilot` 的稳定化验收。
-
-除非用户重新把其中某项纳入范围，当前开发顺序仅覆盖通用原生参数化能力；不得为了清理范围而删除上述已有实现。
-
 ## 8. 审查与语义实体引用
 
 ### `scripts/sw_entity_reference.py`
@@ -263,9 +239,9 @@
 - 驱动草图尺寸的原位 COM 身份改绑不受 SW2025 支持：`IAnnotation.SetAttachedEntities` 返回 False；稳定路线是删除—重建并要求调用方替换陈旧引用。该路线现已真机保留驱动值、名称、双向公差与附着实体，不再把可迁移元数据列为缺口。自由点移动、构造状态切换、显式实体删除、选择驱动与 RelationManager 直接关系创建（含失败回滚批处理）、跨既有关系的事务式实体替换和关系完整生命周期均已真机验证；
 - 设计表创建/编辑语义；既有设计表只读元数据检查及配置参数矩阵只读检查已实现且不会打开 Excel/OLE，但 `InsertFamilyTableNew/Edit` 属交互式嵌入表格路径，当前不允许在无人值守回归中自动触发；两种 SetParameters 路径在无设计表 SW2025 中未能可靠回写，公共写入继续使用已验证的尺寸、抑制和配置族 API。基础面中心参考点、全部参考点枚举、五种参考轴类型及圆柱/圆锥分支、偏置平面、三点/角度/中面/圆柱相切平行/平行过点/曲线端点法向基准面、数值坐标系、全局变量和尺寸方程式已真机验证；沿曲线参考点→该点处曲线法向基准面的复合原生依赖链，以及曲面相切面上的草图点最近位置/沿草图法向投影均已验证。`OptionOriginOnCurve` 是约束位标志而非独立特征，单独施加于实体直边会返回空；项目已用“曲线上原生参考点 → 通过该点且法向于曲线的基准面”覆盖曲线起点和任意百分比位置的完整用户语义，因此不再把该孤立位标志列为能力缺口；
 - 任意特征依赖的直接重新挂接；公开 Feature API 没有通用“改父特征”语义。原生父子依赖递归图、依赖路径、基础独立特征重排、依赖安全重排（父级移到后代之后会在 COM 前阻断）、整个文件夹重排、回滚条、命名 FeatureManager 包含文件夹及两层嵌套文件夹已验证，面/边/顶点持久引用已通过保存重开，边/顶点还通过了另一条边圆角引发的拓扑变化回归；
-- 更复杂的多实体分割、互相裁剪和填充曲面曲率连续性；基础 Combine、Intersect、Move/Copy Body、平面/等距/缝合/标准裁剪/接触填充（含内部 3D 约束曲线）/相切填充/法向直纹曲面、Delete Face 全模式、Replace Face 和加厚已真机验证。互相裁剪已完成接口与选择契约，但 SW2025 对正确的曲面体/区域选择仍在 `PostTrimSurface` 返回空，保持 `pilot`。`PostSplitBody2` 会打开交互式“另存为”，公共入口已阻断，内部实验入口采用函数参数与环境变量双门禁，不得自动调用。模具分型、生产级钣金、生产级焊件及齿轮 `pilot` 稳定化已列为暂缓项，不属于当前 Gap 统计。
+- 更复杂的多实体分割、互相裁剪和填充曲面曲率连续性；基础 Combine、Intersect、Move/Copy Body、平面/等距/缝合/标准裁剪/接触填充（含内部 3D 约束曲线）/相切填充/法向直纹曲面、Delete Face 全模式、Replace Face 和加厚已真机验证。互相裁剪已完成接口与选择契约，但 SW2025 对正确的曲面体/区域选择仍在 `PostTrimSurface` 返回空，保持 `pilot`。`PostSplitBody2` 会打开交互式“另存为”，公共入口已阻断，内部实验入口采用函数参数与环境变量双门禁，不得自动调用。
 
-其中部分存在 Script API 或其他 `pilot` 后端，但没有逐步 Skill CLI 会话保护。需要时应明确选择：使用已有受控脚本并验证、转专项 Skill，或阻断。
+其中部分存在 Script API 或其他 `pilot` 后端，但没有逐步 Skill CLI 会话保护。需要时应明确选择：使用已有受控脚本并验证，或阻断。
 
 ## 10. 更新本目录的方法
 

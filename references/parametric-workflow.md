@@ -8,7 +8,7 @@
 - 现有零件参数修改、配置和属性；
 - 特征树、重建、实体、几何、保存和多视图验收。
 
-需要能力明细时读取 [原生能力目录](references/native-capability-catalog.md) 和 `capabilities.yaml`。
+需要能力明细时读取 [原生能力目录](native-capability-catalog.md) 和 `capabilities.yaml`。
 
 ## 适用边界
 
@@ -19,12 +19,7 @@
 - 需要凸台、切除、拔模、旋转、孔槽、圆角、倒角、阵列、壳、镜像、筋、配置或命名尺寸更新；
 - 需要从工程图、图片或既有零件推导参数化特征。
 
-不要用本 Skill 取代：
-
-- 装配体与 Mate：使用根 Skill 的装配工作流；
-- 工程图：使用 `solidworks-engineering-drawing`；
-- 仅需 STEP/STL/DXF 的无头任务：使用开放格式后端；
-- 螺纹孔、复杂 CNC 圆角/倒角、钣金、焊件、齿轮等专项任务：本 Skill 负责原生参数化底线和最终验证，详细领域规则仍读取对应专项 Skill/参考文档。
+本版本覆盖原生零件建模与复核。
 
 ## 能力来源与执行优先级
 
