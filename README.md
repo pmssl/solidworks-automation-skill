@@ -37,6 +37,16 @@ python scripts/sw_skill_session.py --help
 
 原生零件保存为 `.SLDPRT` 并保留特征树。交付前检查重建状态、实体数量和关键几何。
 
+### 批量建模与断点续建
+
+打开 SolidWorks 2025 后，在仓库根目录运行支架示例：
+
+```powershell
+python examples/create_bracket_from_drawing.py --output output/bracket.SLDPRT
+```
+
+每个阶段验证通过后，脚本在 `output/bracket_checkpoints/` 保存一对同名的 `.SLDPRT` 和 `.json`。发生错误时，修正原因后执行脚本打印的 `Resume:` 命令即可从上一个检查点续建。请把两份检查点文件放在同一目录。需要更换成品路径时，可在恢复命令中加上 `--output`。
+
 ## 验证与许可
 
 ```powershell
