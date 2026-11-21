@@ -1,0 +1,4 @@
+interface:
+  display_name: "SolidWorks Parametric"
+  short_description: "All native parametric SolidWorks Part workflows"
+  default_prompt: "Use $solidworks-parametric to plan, build, modify, and verify this editable native SolidWorks part."
