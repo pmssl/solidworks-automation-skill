@@ -79,7 +79,7 @@ python $cli discard_session --session-id $id
 
 ### 1. 发现能力与确认环境
 
-1. 读取项目 `AGENTS.md` 和与本任务相关的长期规则。
+1. 确认目标项目对建模和交付的要求，并遵循已有的项目规则。
 2. 确认 Skill CLI 路径。
 3. 运行只读健康检查，确认 SolidWorks、COM 和所需加载项/类型库可用。
 4. 记录任务开始前的活动文档和已打开文档。
