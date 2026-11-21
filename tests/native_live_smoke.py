@@ -1,6 +1,6 @@
 """Disposable live-COM smoke test for the native parametric workflow.
 
-Creates one unsaved Part, exercises the same engine used by the Skill CLI,
+Creates one unsaved Part, exercises the native Python session engine,
 and always closes the temporary document.
 """
 

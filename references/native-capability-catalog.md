@@ -6,13 +6,13 @@
 
 | 标记 | 含义 |
 |---|---|
-| Skill CLI | 当前逐步会话工具，具有文档绑定和状态回读 |
+| Python 会话 | 具有文档绑定和状态回读的 Python 建模接口 |
 | Script API | 项目已有原生 COM 封装；使用前后必须做真实 SolidWorks 验证 |
 | Gap | 当前没有足够稳定的项目入口，必须扩展或报告不支持 |
 
-## 1. 逐步 Skill CLI
+## 1. Python 建模会话
 
-以下命令通过 scripts/sw_skill_session.py 执行：
+以下操作可通过 `scripts/sw_native_parametric.py` 的 `NativeParametric` 调用。跨进程时可使用 `scripts/sw_skill_session.py` 的 `run_action()`。
 
 | 工具 | 能力 | 关键验证 |
 |---|---|---|
@@ -55,7 +55,7 @@
 
 ## 2. 原生文档及其他操作
 
-通过 CLI 的 document、new_part、save_part、model_state 查看、新建、保存和检查零件。打开、关闭、导出和审查使用 sw_session.py、sw_export.py、sw_review.py。孔槽、配置、命名尺寸和属性使用 sw_hole_features.py 与 sw_document_data.py。
+通过 `sw_connect.py` 连接、创建和保存文档。会话脚本也可调用 `run_action()` 查看、新建、保存和检查零件。打开、关闭、导出和审查使用 `sw_session.py`、`sw_export.py`、`sw_review.py`。孔槽、配置、命名尺寸和属性使用 `sw_hole_features.py` 与 `sw_document_data.py`。
 
 ## 3. 原生 Script API：草图
 
@@ -93,7 +93,7 @@
 | `sketch_relations` / `sketch_relation_summary` / `add_sketch_relation_to_entities` / `add_sketch_relation_direct` / `add_sketch_relations_direct_batch` / `set_sketch_relation_suppressed` / `replace_sketch_relation_entity` / `replace_sketch_relation_entities_batch` / `delete_sketch_relation` | 原生关系生命周期管理 | 非水平线添加水平关系、抑制后移动、恢复、把关系从第一条线重绑定到第二条线并删除，类型、实体数、坐标和关系总数均已真机验证；直接 RelationManager 入口不依赖选择集，使用 `swConstraintType_e` 和显式 Dispatch 数组；创建批处理先完整校验，后续关系失败时用 `DeleteRelation` 逆序回滚；既有关系实体替换批处理在失败时反向替换回滚。真机将水平/等长两关系从旧线批量迁移到 31.623 mm 斜线后，新线变为水平并与另一线等长，关系类型/实体数为 4/1 与 14/2 |
 | `auto_dimension_sketch` | 自动尺寸；使用后必须复查设计意图 |
 
-这些函数不自动获得 Skill CLI 的会话保护。使用时必须自行确认活动文档、草图对象、返回值和完全定义状态。
+直接调用这些函数时，脚本负责核对活动文档、草图对象、返回值和完全定义状态。
 
 ## 4. 原生 Script API：实体特征
 
@@ -109,7 +109,7 @@
 | `extrude_boss_midplane` | 中面凸台，总深度参数 | 回读 `MidPlane (6)`、总深度、绝对对称边界和体积 |
 | `extrude_cut_through_all` | 单方向贯穿全部切除 | 回读 `ThroughAll (1)`；方向必须指向材料侧 |
 | `extrude_cut_midplane` | 中面切除，总深度参数 | 回读 `MidPlane (6)`、总深度和切除体积 |
-| `revolve_feature` / `revolve_boss` | 同草图构造中心线驱动的旋转凸台/切除及兼容凸台入口 | 逐步任务优先使用 Skill CLI；轴线和角度必须回读 |
+| `revolve_feature` / `revolve_boss` | 同草图构造中心线驱动的旋转凸台/切除及兼容凸台入口 | 回读轴线和角度 |
 | `revolve_feature_about_axis` | 独立原生基准轴驱动的旋转凸台/切除 | 官方选择契约为 profile mark 0、`AXIS` mark 16；R10→R20、高 10 mm 环形实体生成 `基准轴1`/`旋转1`，FeatureData 轴类型 5、体积 `9424.777961 mm³`、包络 `10×40×40 mm`，已真机验证 |
 | `reference_axis_from_sketch_line` / `revolve_feature_about_sketch_segment` | 另一张草图中的直线经原生基准轴驱动旋转 | SW2025 将外部线识别为 `swSelEXTSKETCHSEGS=24`，不能直接传给 `FeatureRevolve2`；组合入口生成可编辑 `基准轴1` 后旋转，`草图1→基准轴1→草图2→旋转1`、轴类型 5、体积 `9424.777961 mm³`、实体包络 `10×40×40 mm` 已真机验证 |
 | `revolve_feature_about_edge` | 现有实体直边直接驱动旋转凸台/切除 | profile mark 0、edge mark 4；60 mm 实体直边直接生成轴类型 1 的 `旋转1`，与 8×60×4 mm 基块保持两实体，体积 `1920.000000/9424.777961 mm³`、旋转体包络 `10×40×40 mm`，已真机验证 |
@@ -121,14 +121,14 @@
 | `revolve_feature_two_references` | 两个旋转方向分别终止于不同顶点/面/偏置面 | 方向 1 目标 mark 32、方向 2 目标 mark 64，`BothDirectionUpToSameEntity=False`；右视面 90° + 原生 60°角度基准面得到 150° 环段、体积 `3926.990817 mm³`、包络 `[0,-5,-20]→[20,5,17.321] mm`，已真机验证 |
 | `revolve_feature_blind_and_reference` | 一个方向为盲角、另一方向到顶点/面/偏置面 | 引用位于方向 1 时 mark 32，位于方向 2 时 mark 64；方向 1 盲角 45°、方向 2 到右视面 90° 得到 135° 环段，FeatureData 类型 2、体积 `3534.291735 mm³`、包络 `[0,-5,-14.142]→[20,5,20] mm`，已真机验证 |
 | 所有实体旋转入口的 `affected_bodies` | 多实体零件中的显式特征作用域 | 实体以 mark 1 追加，`UseFeatScope=True`、`UseAutoSelect=False`；双环体均与切除轮廓相交时，scope count 1 仅将下环从 `7539.822369` 切到 `4750.088092 mm³`，上环保持不变，已真机验证 |
-| `sweep_feature` | 两草图扫描凸台/切除 | 截面 mark 1、路径 mark 4；逐步任务优先使用 Skill CLI |
+| `sweep_feature` | 两草图扫描凸台/切除 | 截面 mark 1、路径 mark 4 |
 | `sweep_boss_with_guides` | 原生凸台扫描的截面、路径与一个或多个导引草图 | 截面 mark 1、路径 mark 4、guide mark 2；Ø20 圆截面沿 40 mm 路径并受偏置导引线控制，回读 1 条 guide、12567.391 mm³ 体积和约 25.05 mm 横向包络，已真机验证 |
 | `sweep_cut_with_guides` | 原生切除扫描的截面、路径与一个或多个导引草图 | 使用 SW2025 `InsertCutSwept5` 22 参数签名；Ø4 圆截面沿 40 mm 路径及偏置导引线从既有导引线凸台去除 `502.618632 mm³`，解析误差 `7.2×10⁻⁵`，回读 1 条 guide，已真机验证 |
 | `sweep_feature_advanced` | 非薄壁凸台/切除扫描的路径方向、双向路径及常量扭转控制 | SW2025 `InsertProtrusionSwept4`/`InsertCutSwept5` 完整签名；Ø6 圆截面以路径中点为起点双向扫描得到 40 mm 长、`1130.973355 mm³` 单实体；8×4 mm 矩形沿 40 mm 直线路径扭转 90°，枚举 8（沿路径常量扭转）和 9（法向恒定+常量扭转）均回读 90°、体积 `1279.995906 mm³`、单实体且重建通过。非圆截面的路径起点应与截面草图实体点建立明确重合；仅落在截面内部但无对应草图点的基线在 SW2025 返回空特征 |
 | `sweep_thin_feature` | 闭合轮廓薄壁凸台/切除扫描，可选导引线、四种壁厚模式、方向和扭转参数 | SW2025 已验证闭合 Ø10 圆沿 40 mm 路径：单向外侧 2 mm 得到 R5–R7、`3015.928947 mm³`；中面总厚 2 mm 得到 R4–R6、`2513.274123 mm³`；FeatureData 回读薄壁状态、类型与厚度。官方 Sweep Rules 明确实体 Boss/Base Sweep 的草图轮廓必须闭合；`ThinFeature` 只控制闭合轮廓壁厚，不使开轮廓合法。能力库现对开轮廓提前阻断并提示使用 `sweep_surface` + `thicken_surface` 的两特征原生替代路线 |
-| `offset_plane` | 命名平面的距离偏置参考平面 | 支持距离和反向；逐步任务优先使用 Skill CLI |
+| `offset_plane` | 命名平面的距离偏置参考平面 | 支持距离和反向 |
 | `constraint_reference_plane`、`reference_plane_geometry` 及三点/角度/中面/相切平行/平行过点/曲线端点法向/曲线位置法向/曲面投影点相切快捷入口 | 1–3 个显式实体引用的约束基准面；Transform 世界几何回读 | 选择标记 0/1/2；支持 SW2025 类型库约束值；三实体顶点重合、实体面+铰链边 37°、两相对实体面中面、Ø20 圆柱相切平行、平行实体面并通过指定顶点、40 mm 直边端点法向平面均已真机验证；曲线位置法向入口先创建保留在 FeatureManager 的原生沿曲线参考点，再让基准面依赖该点，25% 位置回读点 `[10,15,10] mm`、法向 `[-1,0,0]`、点面残差 0；曲面投影点相切支持最近位置和沿草图法向两模式，分别在圆柱上回读 X=10 mm/法向 X 与 Z=10 mm/法向 Z 的真实相切面；平行过点用 B-Rep 法向/中心定位参考面，不依赖界面语言；原点/法向必须从 Transform 读取 |
-| `loft_feature` | 2–16 张有序截面草图放样凸台/切除 | 截面 mark 1；逐步任务优先使用 Skill CLI |
+| `loft_feature` | 2–16 张有序截面草图放样凸台/切除 | 截面 mark 1 |
 | `loft_boss_with_guides` | 多截面、一个或多个分组导引曲线及可选中心线的原生凸台放样 | 截面 mark 1，导引组 mark `4096*n+2`，中心线 mark 4；Ø40→Ø20、30 mm 高圆截面加单条 3D 直线导引已真机回读 1 条 guide、单实体和 21993.006 mm³ 体积 |
 | `loft_cut_with_guides` | 多截面、一个或多个导引曲线及可选中心线的原生切除放样 | SW2025 `InsertCutBlend`：截面 mark 1、所有导引线 mark 2、中心线 mark 4；60×60×80 mm 基体内以 Ø20→Ø10、长 30 mm 截面和单条 3D 直线导引创建 `切除-放样1`，回读 1 条 guide、`IsBossFeature=false`、去除 `5498.118805 mm³`，与圆台解析值差 `0.331662 mm³`，单实体重建通过 |
 | `loft_feature_advanced` | 中心线、闭合、薄壁以及法向/方向向量/依附面相切端部约束的原生凸台/切除放样 | 中心线凸台/切除分别回读非空 Centerline 并以解析圆台体积验证；Ø20→Ø10、30 mm 中面总厚 2 mm 的薄壁凸台/切除均得到 `2866.434312 mm³`；四个正交圆截面配闭合 3D 导引线生成 `Close=true` 的 2934.211361 mm³ 闭合实体；法向约束与 X 向基准轴方向约束分别得到 7549.017822/6158.119878 mm³；圆柱顶面作为首截面、匹配类型 3 与末端法向约束生成 8735.612519 mm³ 合并实体，保留一个圆柱面并回读 start/end 类型 3/1。SW2025 公开 `InsertProtrusionBlend2`/`InsertCutBlend` 仅接受匹配类型 0..3；UI 的“曲率到面”未由该公开签名暴露 |
@@ -233,21 +233,19 @@
 
 以下能力不能因为 SolidWorks 软件本身支持就宣称项目已稳定支持：
 
-- 椭圆、抛物线、方程式曲线和文本已进入原生能力库并通过真机回归，但尚未加入逐步 Skill CLI；按当前“能力库优先”原则这不是建模阻断；
-- 逐步 Skill CLI 的边界特征和复杂曲面；Boundary 封装已完成类型库签名、选择标记和离线契约测试，但 SW2025 `InsertNetBlend` 对原生草图线段的当前组合会终止 SolidWorks，因此已在能力函数内部双门禁，仍属未完成真机能力；基础放样已覆盖 2–16 张完全定义截面的凸台/切除，能力库进一步覆盖 3D 草图导引线、中心线、闭合、薄壁以及法向/方向向量/依附面相切端部约束的凸台/切除放样；UI 的“曲率到面”不在 SW2025 `InsertProtrusionBlend2`/`InsertCutBlend` 公开匹配类型 0..3 中；扫描已覆盖单截面/单路径凸台与切除，能力库进一步覆盖导引线凸台/切除、双向路径、两种常量扭转模式和闭合轮廓薄壁扫描；官方规则不允许实体 Sweep 使用开轮廓，等价需求走原生曲面扫描后加厚，多截面是单个 Sweep 功能但不是当前脚本 API 的标准输入模式；旋转能力库现已覆盖同草图构造线、独立基准轴、外部草图直线经基准轴、实体直边、单/双盲角度、中面、薄壁、到顶点/面/偏置、双向同一/不同引用、盲角与引用混合以及显式多实体作用域；这些高级模式尚未全部加入逐步 Skill CLI，但按“能力库优先”原则不再是原生建模缺口；
-- Convert Entities、Offset Entities、显式拾取点 Trim/Extend、草图镜像及线性/圆周草图阵列已进入原生能力库并通过真机回归，但尚未加入逐步 Skill CLI；
+- Boundary 封装已完成类型库签名、选择标记和离线契约测试，但 SW2025 `InsertNetBlend` 对原生草图线段的当前组合会终止 SolidWorks，因此已在能力函数内部双门禁，仍属未完成真机能力；基础放样已覆盖 2–16 张完全定义截面的凸台/切除，能力库进一步覆盖 3D 草图导引线、中心线、闭合、薄壁以及法向/方向向量/依附面相切端部约束的凸台/切除放样；UI 的“曲率到面”不在 SW2025 `InsertProtrusionBlend2`/`InsertCutBlend` 公开匹配类型 0..3 中；扫描已覆盖单截面/单路径凸台与切除，能力库进一步覆盖导引线凸台/切除、双向路径、两种常量扭转模式和闭合轮廓薄壁扫描；官方规则不允许实体 Sweep 使用开轮廓，等价需求走原生曲面扫描后加厚，多截面是单个 Sweep 功能但不是当前脚本 API 的标准输入模式；旋转能力库现已覆盖同草图构造线、独立基准轴、外部草图直线经基准轴、实体直边、单/双盲角度、中面、薄壁、到顶点/面/偏置、双向同一/不同引用、盲角与引用混合以及显式多实体作用域。
 - 驱动草图尺寸的原位 COM 身份改绑不受 SW2025 支持：`IAnnotation.SetAttachedEntities` 返回 False；稳定路线是删除—重建并要求调用方替换陈旧引用。该路线现已真机保留驱动值、名称、双向公差与附着实体，不再把可迁移元数据列为缺口。自由点移动、构造状态切换、显式实体删除、选择驱动与 RelationManager 直接关系创建（含失败回滚批处理）、跨既有关系的事务式实体替换和关系完整生命周期均已真机验证；
 - 设计表创建/编辑语义；既有设计表只读元数据检查及配置参数矩阵只读检查已实现且不会打开 Excel/OLE，但 `InsertFamilyTableNew/Edit` 属交互式嵌入表格路径，当前不允许在无人值守回归中自动触发；两种 SetParameters 路径在无设计表 SW2025 中未能可靠回写，公共写入继续使用已验证的尺寸、抑制和配置族 API。基础面中心参考点、全部参考点枚举、五种参考轴类型及圆柱/圆锥分支、偏置平面、三点/角度/中面/圆柱相切平行/平行过点/曲线端点法向基准面、数值坐标系、全局变量和尺寸方程式已真机验证；沿曲线参考点→该点处曲线法向基准面的复合原生依赖链，以及曲面相切面上的草图点最近位置/沿草图法向投影均已验证。`OptionOriginOnCurve` 是约束位标志而非独立特征，单独施加于实体直边会返回空；项目已用“曲线上原生参考点 → 通过该点且法向于曲线的基准面”覆盖曲线起点和任意百分比位置的完整用户语义，因此不再把该孤立位标志列为能力缺口；
 - 任意特征依赖的直接重新挂接；公开 Feature API 没有通用“改父特征”语义。原生父子依赖递归图、依赖路径、基础独立特征重排、依赖安全重排（父级移到后代之后会在 COM 前阻断）、整个文件夹重排、回滚条、命名 FeatureManager 包含文件夹及两层嵌套文件夹已验证，面/边/顶点持久引用已通过保存重开，边/顶点还通过了另一条边圆角引发的拓扑变化回归；
 - 更复杂的多实体分割、互相裁剪和填充曲面曲率连续性；基础 Combine、Intersect、Move/Copy Body、平面/等距/缝合/标准裁剪/接触填充（含内部 3D 约束曲线）/相切填充/法向直纹曲面、Delete Face 全模式、Replace Face 和加厚已真机验证。互相裁剪已完成接口与选择契约，但 SW2025 对正确的曲面体/区域选择仍在 `PostTrimSurface` 返回空，保持 `pilot`。`PostSplitBody2` 会打开交互式“另存为”，公共入口已阻断，内部实验入口采用函数参数与环境变量双门禁，不得自动调用。
 
-其中部分存在 Script API 或其他 `pilot` 后端，但没有逐步 Skill CLI 会话保护。需要时应明确选择：使用已有受控脚本并验证，或阻断。
+使用已有 `pilot` 封装时，按相应的验证范围核对结果。
 
 ## 10. 更新本目录的方法
 
 修改原生能力后同步检查：
 
-1. Skill CLI 的命令帮助；
+1. Python 会话接口及使用示例；
 2. `scripts/sw_part.py`、`sw_hole_features.py`、`sw_document_data.py` 的公共函数；
 3. `capabilities.yaml` 的等级、版本和依赖；
 4. 单元测试、注册检查和真实临时 Part 回归；

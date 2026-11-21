@@ -1,33 +1,23 @@
-"""Exercise separate CLI processes against one disposable native Part."""
+"""Exercise separate Python processes against one disposable native Part."""
 
 from __future__ import annotations
 
-import json
+from multiprocessing import get_context
 from pathlib import Path
-import subprocess
-import sys
 from tempfile import TemporaryDirectory
 
 from scripts.sw_connect import get_com_member, win32com_client
-
-
-CLI = Path(__file__).resolve().parents[1] / "scripts" / "sw_skill_session.py"
+from scripts.sw_skill_session import run_action
 
 
 def main() -> None:
     sw = win32com_client.GetActiveObject("SldWorks.Application")
     original = get_com_member(sw, "ActiveDoc")
     original_title = get_com_member(original, "GetTitle") if original is not None else None
-    with TemporaryDirectory() as cwd:
-        def run(action, session_id=None, *, ok=True, **params):
-            cmd = [sys.executable, str(CLI), action, "--params-file", "-"]
-            if session_id:
-                cmd.extend(["--session-id", session_id])
-            proc = subprocess.run(cmd, input=json.dumps(params), encoding="utf-8",
-                                  capture_output=True, cwd=cwd, timeout=45)
-            result = json.loads(proc.stdout)
-            assert proc.returncode == (0 if ok else 1), (action, result, proc.stderr)
-            return result
+    with TemporaryDirectory() as cwd, get_context("spawn").Pool(1, maxtasksperchild=1) as pool:
+        def run(action, session_id=None, **params):
+            pending = pool.apply_async(run_action, (action, params, session_id))
+            return pending.get(timeout=45)
 
         title = None
         token = None
@@ -44,8 +34,12 @@ def main() -> None:
                 run("auto_define", token)
             assert run("finish", token)["fully_defined"]
             unrelated_title = run("new_part")["document"]
-            failure = run("extrude", token, ok=False, depth_mm=10)
-            assert "Active Part changed" in failure["message"], failure
+            try:
+                run("extrude", token, depth_mm=10)
+            except RuntimeError as exc:
+                assert "Active Part changed" in str(exc), exc
+            else:
+                raise AssertionError("Session accepted a different Part")
             sw.CloseDoc(unrelated_title)
             unrelated_title = None
             sw.ActivateDoc2(title, False, 0)
@@ -91,7 +85,7 @@ def main() -> None:
                 sw.QuitDoc(title)
             if original_title:
                 sw.ActivateDoc2(original_title, False, 0)
-    print("PASS: independent CLI processes reused the session, rejected a different Part and saved one native solid")
+    print("PASS: independent Python processes reused the session, rejected a different Part and saved one native solid")
 
 
 if __name__ == "__main__":

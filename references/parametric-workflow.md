@@ -25,43 +25,37 @@
 
 按以下顺序选择执行入口：
 
-1. **Skill 逐步 CLI**：默认通过 `scripts/sw_skill_session.py` 逐步执行草图、尺寸、约束、特征与回读。每条命令独立运行并退出。
-2. **原生 Python/COM 能力库**：其他已有能力直接调用 `scripts/` 中的封装，例如孔槽、配置、命名尺寸、属性、导出及审查。完整工作流也可以写成一个 Python 脚本。
+1. **原生 Python/COM 能力库**：在建模脚本中直接调用 `scripts/` 的建模、保存和审查函数。
+2. **Python 会话**：使用 `NativeParametric` 管理同一脚本进程里的草图步骤及校验。跨进程续接时，使用 `scripts.sw_skill_session.run_action()`。
 3. **扩展或阻断**：缺少稳定入口时报告缺口。扩展能力先补库函数及真实临时 Part 回归。
 
 不得用 `solidworks_create_basic_part` 代替逐步原生建模。不得用 STEP、STL、DXF 导入或无历史实体冒充原生参数化模型。
 
-### 跨项目使用逐步 CLI
+### 在 Python 脚本中调用
 
-将整个 `solidworks-automation` 安装到目标项目或代理的技能目录。需要 Windows、Python 3.10+、根 Skill 的 COM 依赖，以及同一 Windows 会话中已运行的 SolidWorks。以下 PowerShell 示例假设运行目录是 Skill 根目录，也可从任意目录用脚本绝对路径调用。
+从 Skill 根目录导入 `scripts` 包。项目脚本位于其他目录时，把 Skill 根目录加入 Python 模块搜索路径。[支架示例](../examples/create_bracket_from_drawing.py)演示了直接调用原生函数并按阶段保存检查点。
 
-```powershell
-$cli = (Resolve-Path '.\scripts\sw_skill_session.py').Path
-$part = python $cli new_part | ConvertFrom-Json
-$begin = @{ expected_document_title = $part.document; plane_name = 'Front Plane' } | ConvertTo-Json -Compress | python $cli begin --params-file - | ConvertFrom-Json
-$id = $begin.session_id
-'{"width_mm":50,"height_mm":30}' | python $cli rectangle --session-id $id --params-file -
-'{"axis":"horizontal","value_mm":50}' | python $cli dimension --session-id $id --params-file -
-'{"axis":"vertical","value_mm":30}' | python $cli dimension --session-id $id --params-file -
-python $cli status --session-id $id
-# 若仍欠定义，先补充设计约束或执行 auto_define 并复核几何。
-python $cli finish --session-id $id
-'{"depth_mm":10}' | python $cli extrude --session-id $id --params-file -
-python $cli model_state --session-id $id
+需要在一个脚本中开始草图，再由另一个脚本继续时，传递 `begin` 返回的 `session_id`。以下函数可分别由两个脚本调用，`expected_title` 应是事先核对过的目标零件标题。
+
+```python
+from scripts.sw_skill_session import run_action
+
+
+def begin_profile(expected_title: str) -> str:
+    result = run_action("begin", {
+        "expected_document_title": expected_title,
+        "plane_name": "Front Plane",
+    })
+    return result["session_id"]
+
+
+def add_profile_rectangle(session_id: str) -> dict:
+    return run_action("rectangle", {"width_mm": 50, "height_mm": 30}, token=session_id)
 ```
 
-每一步检查退出码和 stdout JSON，失败时停止后续写入。PowerShell 传递含中文的 JSON 时，将 `$OutputEncoding` 设为 UTF-8，或使用 UTF-8 文件配合 `--params-file`。CLI 用法见 `python $cli --help`，操作参数与 `scripts/sw_native_parametric.py` 的同名方法一致，`token` 通过 `--session-id` 提供。
+`run_action()` 返回 Python 字典，失败时抛出异常。草图经尺寸、约束和定义状态检查后，用 `finish` 退出编辑并保存检查点。首次另存可能改变文档标题或路径，此时后续步骤应按保存后的文档身份和草图引用继续。
 
-完成审查后，保存并清理会话。将示例中的路径替换为目标项目的绝对路径。
-
-```powershell
-@{ expected_document_title = $part.document; path = 'D:\CAD\plate.sldprt' } | ConvertTo-Json -Compress | python $cli save_part --params-file -
-python $cli discard_session --session-id $id
-```
-
-另存后若文档标题或路径变化，旧会话会拒绝续接。`discard_session` 只删除该会话 JSON。
-
-会话记录保存在 Skill 根目录的 `.runtime/solidworks-sessions/<session_id>.json`，依赖当前 SolidWorks 进程、原文档及草图引用。切回原文档可继续。SolidWorks 重启或草图编辑阶段与记录不符时，命令停止并提示检查模型。分发 Skill 时排除 `.runtime/`。
+会话记录保存在 `.runtime/solidworks-sessions/<session_id>.json`，与 SolidWorks 进程、目标文档和草图持久引用绑定。切回原文档可继续。SolidWorks 重启后，从已保存的原生检查点恢复。用 `run_action("discard_session", token=session_id)` 清理会话记录。
 
 ## 不可变约束
 
@@ -73,17 +67,17 @@ python $cli discard_session --session-id $id
 - 特征必须回读错误码、重建状态和实体数量。
 - 保存成功必须同时满足工具返回成功、绝对路径正确、文件真实存在且非空。
 - 预览非空不能证明几何正确；关键尺寸、方向和截面必须通过 API/B-Rep/多视图交叉验证。
-- 失败临时文档要关闭；成功后保留最新已验证成果窗口，不关闭用户原有文档。
+- 失败后保留工作文档供检查和修复。需要关闭该文档以恢复检查点时，先确认检查点已落盘且可用。成功后保留最终成果窗口，用户原有文档应继续保留。
 
 ## 统一工作流
 
 ### 1. 发现能力与确认环境
 
 1. 确认目标项目对建模和交付的要求，并遵循已有的项目规则。
-2. 确认 Skill CLI 路径。
+2. 确认脚本可导入 Skill 的 Python 能力库。
 3. 运行只读健康检查，确认 SolidWorks、COM 和所需加载项/类型库可用。
 4. 记录任务开始前的活动文档和已打开文档。
-5. 需要逐步 CLI 未暴露的特征时，读取能力目录中对应脚本入口和限制。
+5. 在能力目录中核对所需特征的 Python 函数和验证范围。
 
 ### 2. 几何分析与特征规划
 
@@ -99,24 +93,25 @@ python $cli discard_session --session-id $id
 
 ### 3. 文档绑定
 
-- 新建零件：使用 CLI `new_part`，记录返回的精确标题。
+- 首次新建零件或用户明确要求从空白重建时，使用 `sw_connect.new_document(sw, "part")`，记录返回文档的精确标题。
+- 重试同一任务时，先读取活动文档和已记录的检查点。核对目标零件身份和最后验收状态，优先修复当前工作零件。当前状态无法安全修复时，从最后一个可用检查点恢复。两处都没有可用进度时，报告阻塞。
 - 修改零件：使用绝对路径打开，核对标题、路径、文档类型和只读状态。
-- 开始草图：使用 CLI `begin`，后续逐步命令携带同一个 `--session-id`。
+- 开始草图时确认目标文档和基准面。使用 Python 会话时，后续步骤传入 `begin` 返回的 `session_id`。
 - 文档标题或路径变化后，旧会话拒绝继续写入是预期保护；重新核对活动文档，不要绕过。
 
 ### 4. 草图创建、尺寸与关系
 
-- 逐步几何优先用 Skill CLI。仅有 Script API 的图元按对应原生封装执行和验证。
-- 逐步 CLI 覆盖普通/构造直线、中心/角点矩形、同心双矩形、圆、圆弧、正多边形、直槽和样条。创建后用 `geometry` 回读真实实体。
+- 使用原生 Python 封装创建图元。使用 `NativeParametric` 时，可调用 `geometry(token)` 回读真实实体。
 - 创建几何后单独添加驱动尺寸和必要关系；每个尺寸回读数值和 `driving=true`。
 - SolidWorks 已自动推断等长、水平、垂直等关系时，不重复添加导致过约束的尺寸。
+- 连接直线或圆弧的端点时，从对应图元回读两个端点，用 `sw.IsSame(first, second)` 检查对象身份。返回 `1` 表示已共享同一端点，可跳过合并。两个端点坐标相等时仍需检查对象身份与已有关系。需要补约束时，先核对目标端点，再添加并回读关系，最后验证轮廓和草图定义状态。
 - 欠定义时优先补充设计意图；必要时使用原生 Fully Define，但必须检查它是否改变了几何。
 - 非正方形双矩形、相近长度或易被智能捕捉的轮廓，必须在自动定义前写入明确驱动尺寸，并在定义后回读草图实体坐标。
 - 状态为过定义、无解、无效或不可识别时停止，不继续创建依赖特征。
 
 ### 5. 特征创建
 
-#### 逐步 CLI 已覆盖
+#### Python 会话已覆盖
 
 - 直线、中心/角点矩形、同心双矩形、圆、圆弧、正多边形、直槽和样条；
 - 草图实体类型、端点、圆心、半径和构造状态回读；
@@ -143,7 +138,7 @@ python $cli discard_session --session-id $id
 ### 6. 方向、终止和拓扑验证
 
 - 自编脚本将建模和保存放入 `main()` 并用 `if __name__ == "__main__":` 保护。建模前先运行 `python -B -c "import runpy; runpy.run_path(r'脚本绝对路径')"` 检查导入与初始化。优先使用能力目录中的公共封装。
-- 切除前运行 `sketch_plane --session-id <ID>`。平面满足 `normal_xyz · 点(mm) = offset_mm`。根据实体所在的一侧，为 `extrude` 传入 `cut_direction: "along_normal"` 或 `"against_normal"`。设置 `cut: true, depth_mm: 0` 可贯穿全部。省略方向时沿用原默认值。
+- 切除前调用 `NativeParametric.sketch_plane(token)` 或等价的平面回读。平面满足 `normal_xyz · 点(mm) = offset_mm`。根据实体所在的一侧，为会话的 `extrude()` 传入 `cut_direction="along_normal"` 或 `"against_normal"`。设置 `cut=True, depth_mm=0` 可贯穿全部。直接调用能力库时使用相应的切除函数。
 - 切除返回空时核对法向、偏置、深度和实体位置，再决定下一步。自动反向可能切到轮廓另一侧的几何。
 - 孔验收用 `measure_geometry` 或 `sw_review.collect_geometry_measurements(model)` 检查测量错误、孔径、孔轴、位置和同轴分段。读取无参 COM 成员时用 `sw_connect.get_com_member(face, "GetSurface")`。通孔还需核对切除终止条件或实际开口。
 - 基准面拉伸与实体面拉伸的默认方向可能不同；深度正确不代表方向正确。
@@ -161,7 +156,11 @@ python $cli discard_session --session-id $id
 
 ### 8. 验证与保存
 
-1. 调用 CLI `model_state` 或等价检查，确认预期草图/特征存在、错误码为 0、实体数量正确。
+自编 Python 建模脚本必须逐步保存。每张草图退出编辑并确认定义状态后，每个特征通过重建、实体状态及关键尺寸检查后，立即调用 `save_part` 保存本次任务专用的原生 `.SLDPRT` 检查点。添加图元、尺寸和约束属于同一次草图编辑，完成并关闭草图后统一保存。脚本须确认保存成功，再记录检查点的绝对路径、本次已保存的步骤和下一步，然后继续建模。
+
+建模或保存失败时停止后续步骤并报告失败原因和最近一次成功保存的位置。优先在身份已确认的当前工作零件中修复失败步骤。需要恢复时，重新打开最后可用的检查点并核对文档路径、已完成的步骤和实体状态，再从未完成的步骤继续。首次另存或重新打开后，应以当前文档身份建立新的草图会话。
+
+1. 调用 `NativeParametric.model_state()` 或等价检查，确认预期草图和特征存在、错误码为 0、实体数量正确。
 2. 检查所有关键草图定义状态。
 3. 用 API 测量包络、孔、圆柱面、关键顶点或其他设计参数。
 4. 生成等轴测、前视、俯视、右视预览并人工查看。
@@ -182,7 +181,6 @@ python $cli discard_session --session-id $id
 
 ## 功能缺口处理
 
-- 逐步 CLI 未覆盖：直接使用项目原生脚本 API，并执行真实临时文档回归；这不是阻断条件。
 - 没有稳定封装：停止并报告需要新增的原生操作、选择策略和验证方法。
 - 边界特征、复杂曲面等不能因为 SolidWorks 本身支持就视为本项目已支持；放样仅限能力目录中已验证的有序截面凸台/切除，扫描仅限单截面/单路径凸台与切除；旋转已覆盖同草图单构造轴和独立基准轴的凸台/切除，其余轴类型、薄壁和双向模式以能力目录为准。
 - 扩展 COM 能力库后必须核对本机类型库签名，运行单元测试和真实临时 Part 全链路测试。
@@ -195,6 +193,6 @@ python $cli discard_session --session-id $id
 - 草图名称、主要尺寸和定义状态；
 - 特征名称、类型、关键参数和重建结果；
 - 实体数量、包络和关键几何证据；
-- 使用的入口（Skill CLI或原生脚本 API）；
+- 使用的 Python 建模脚本或函数；
 - 任何 `pilot`、待人工复核或尚未支持的部分；
 - 最终活动窗口和临时窗口清理状态。

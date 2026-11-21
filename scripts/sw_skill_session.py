@@ -1,21 +1,15 @@
-"""Run one native SolidWorks operation, then exit. Session state lives in the skill."""
+"""Run native SolidWorks operations with optional persisted sketch sessions."""
 
 from __future__ import annotations
 
-import argparse
-from contextlib import redirect_stdout
 from dataclasses import asdict
 import json
 import os
 from pathlib import Path
 import re
-import sys
 from tempfile import NamedTemporaryFile
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from scripts.sw_native_parametric import NativeParametric, SketchSession, _com_get, _doc_id, _find_feature
+from .sw_native_parametric import NativeParametric, SketchSession, _com_get, _doc_id, _find_feature
 
 
 SESSION_DIR = Path(__file__).resolve().parents[1] / ".runtime" / "solidworks-sessions"
@@ -100,7 +94,46 @@ def save_part(model, expected_document_title: str, path: str | None = None) -> d
     return {"status": "ok", "path": str(target)}
 
 
-def run_action(action: str, params: dict, token: str | None, connect) -> dict:
+def _connect_active():
+    from .sw_connect import _read_active_document, win32com_client
+
+    try:
+        sw = win32com_client.GetActiveObject("SldWorks.Application")
+    except Exception as exc:
+        raise RuntimeError(
+            "Cannot attach to running SolidWorks. Start it in the same Windows session"
+        ) from exc
+    return sw, _read_active_document(sw)
+
+
+def run_action(action: str, params: dict | None = None, token: str | None = None,
+               connect=_connect_active) -> dict:
+    """Run one operation and return its result, raising on failure."""
+    from .sw_connect import _LaunchGuard
+
+    if action not in ACTIONS:
+        raise ValueError(f"Unknown SolidWorks action: {action}")
+    if params is None:
+        params = {}
+    elif not isinstance(params, dict):
+        raise TypeError("Parameters must be a dict")
+    if token is None and action in (*SKETCH_ACTIONS, "discard_session"):
+        raise ValueError("This action requires a session_id")
+    if token is not None:
+        if action not in (*SKETCH_ACTIONS, "model_state", "discard_session"):
+            raise ValueError("This action does not accept a session_id")
+        path = session_path(token)
+
+    with _LaunchGuard("SolidWorksAutomation.Skill.Session"):
+        if action == "discard_session":
+            if params:
+                raise ValueError("discard_session takes no parameters")
+            path.unlink()
+            return {"status": "ok", "session_id": token}
+        return _run_action(action, params, token, connect)
+
+
+def _run_action(action: str, params: dict, token: str | None, connect) -> dict:
     from scripts import sw_part
     from scripts.sw_connect import new_document
     from scripts.sw_entity_reference import create_persistent_reference
@@ -166,57 +199,3 @@ def run_action(action: str, params: dict, token: str | None, connect) -> dict:
         state["session"] = asdict(session)
         write_state(path, state)
     return result
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=ACTIONS)
-    parser.add_argument("--session-id")
-    inputs = parser.add_mutually_exclusive_group()
-    inputs.add_argument("--params-file", type=Path, help="UTF-8 JSON object, or - for stdin")
-    inputs.add_argument("--params-json", help="Inline JSON object")
-    args = parser.parse_args()
-    token = args.session_id
-    try:
-        if args.params_file is not None:
-            source = (sys.stdin.buffer.read().decode("utf-8-sig") if args.params_file == Path("-")
-                      else args.params_file.read_text(encoding="utf-8-sig"))
-        else:
-            source = args.params_json or "{}"
-        params = json.loads(source)
-        if not isinstance(params, dict):
-            raise ValueError("Parameters must be a JSON object")
-        if token is not None:
-            session_path(token)
-        if token is None and args.action in (*SKETCH_ACTIONS, "discard_session"):
-            raise ValueError("This action requires --session-id")
-        if token is not None and args.action not in (*SKETCH_ACTIONS, "model_state", "discard_session"):
-            raise ValueError("This action does not accept --session-id")
-
-        with redirect_stdout(sys.stderr):
-            from scripts.sw_connect import _LaunchGuard, _read_active_document, win32com_client
-
-            with _LaunchGuard("SolidWorksAutomation.Skill.Session"):
-                if args.action == "discard_session":
-                    if params:
-                        raise ValueError("discard_session takes no parameters")
-                    session_path(token).unlink()
-                    result = {"status": "ok", "session_id": token}
-                else:
-                    def connect():
-                        try:
-                            sw = win32com_client.GetActiveObject("SldWorks.Application")
-                        except Exception as exc:
-                            raise RuntimeError("Cannot attach to running SolidWorks. Start it in the same Windows session") from exc
-                        return sw, _read_active_document(sw)
-
-                    result = run_action(args.action, params, token, connect)
-        print(json.dumps(result, ensure_ascii=True))
-        return 0
-    except Exception as exc:
-        print(json.dumps({"status": "error", "message": str(exc)}, ensure_ascii=True))
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

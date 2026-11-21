@@ -1,4 +1,4 @@
-"""Live SolidWorks smoke test for native sketch primitive CLI implementations."""
+"""Live SolidWorks smoke test for native sketch primitives."""
 
 from __future__ import annotations
 
