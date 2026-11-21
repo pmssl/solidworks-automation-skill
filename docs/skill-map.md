@@ -6,7 +6,7 @@ This repository is managed as one SolidWorks automation skill family. The root s
 
 | Name | Role |
 |---|---|
-| `solidworks-automation` | SolidWorks session management, document IO, modeling helpers, export, review, MCP server, API lookup rules |
+| `solidworks-automation` | Python CLI, SolidWorks session management, document IO, modeling helpers, export, review, and API lookup rules |
 
 ## Subskills
 
@@ -43,22 +43,14 @@ Every CAD-generating subskill should produce or require:
 - `sw_review.run_review()` report.
 - At least isometric preview; front/top/right when geometry needs inspection.
 
-## Productization Docs
-
-| File | Purpose |
-|---|---|
-| `docs/market-research-2026.md` | Market research, user pain points, competitor signals, and product positioning |
-| `docs/product-mvp-spec.md` | MVP specification for the local desktop CAD delivery workbench |
-
 ## Adding a New Subskill
 
 Create:
 
 ```text
 subskills/<name>/
-├── SKILL.md
+├── GUIDE.md
 ├── README.md
-├── manifest.yaml
 ├── scripts/
 ├── references/
 └── examples/
@@ -68,5 +60,4 @@ Then update:
 
 - `SUBSKILLS.md`
 - `README.md`
-- `project.yaml`
 - this file
