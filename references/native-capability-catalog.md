@@ -109,6 +109,7 @@
 | `extrude_boss_midplane` | 中面凸台，总深度参数 | 回读 `MidPlane (6)`、总深度、绝对对称边界和体积 |
 | `extrude_cut_through_all` | 单方向贯穿全部切除 | 回读 `ThroughAll (1)`；方向必须指向材料侧 |
 | `extrude_cut_midplane` | 中面切除，总深度参数 | 回读 `MidPlane (6)`、总深度和切除体积 |
+| `extrude_feature` / `ExtrudeEnd` | 原生凸台和切除，支持定深、到下一面、到指定面、距面偏移、中面，以及切除贯穿全部 | 第二方向可独立设置终止条件，方向与第一侧相反。SW2025 已真机验证到下一面、到指定基准面、距实体面偏移，以及定深 + 到指定面、到指定面 + 距面偏移。按终止条件、重建和体积验收 |
 | `revolve_feature` / `revolve_boss` | 同草图构造中心线驱动的旋转凸台/切除及兼容凸台入口 | 回读轴线和角度 |
 | `revolve_feature_about_axis` | 独立原生基准轴驱动的旋转凸台/切除 | 官方选择契约为 profile mark 0、`AXIS` mark 16；R10→R20、高 10 mm 环形实体生成 `基准轴1`/`旋转1`，FeatureData 轴类型 5、体积 `9424.777961 mm³`、包络 `10×40×40 mm`，已真机验证 |
 | `reference_axis_from_sketch_line` / `revolve_feature_about_sketch_segment` | 另一张草图中的直线经原生基准轴驱动旋转 | SW2025 将外部线识别为 `swSelEXTSKETCHSEGS=24`，不能直接传给 `FeatureRevolve2`；组合入口生成可编辑 `基准轴1` 后旋转，`草图1→基准轴1→草图2→旋转1`、轴类型 5、体积 `9424.777961 mm³`、实体包络 `10×40×40 mm` 已真机验证 |

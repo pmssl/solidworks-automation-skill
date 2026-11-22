@@ -135,6 +135,27 @@ def add_profile_rectangle(session_id: str) -> dict:
 
 使用能力库时，不得跳过当前文档核对、对象返回值检查、强制重建、实体检查和保存审查。重复能力应沉淀为可测试的库函数。
 
+#### 拉伸终止条件
+
+`sw_part.extrude_feature()` 接收已完成的草图及 `ExtrudeEnd` 对象。长度以米计。到指定面和距面偏移使用实体面或基准面的 COM 对象。第二方向与第一方向相反，可以独立设置终止条件。凸台默认沿草图法向，切除默认逆草图法向。用 `reverse_direction=True` 反向，用 `reverse_offset=True` 将偏移改为远离草图。
+
+例如，沿草图法向切到 `front_plane`，反向切到距 `back_plane` 3 mm 处。
+
+```python
+from scripts.sw_part import ExtrudeEnd, extrude_feature
+
+feature = extrude_feature(
+    model,
+    sketch_name,
+    ExtrudeEnd("up_to_surface", reference=front_plane),
+    direction2=ExtrudeEnd("offset_from_surface", 0.003, reference=back_plane),
+    cut=True,
+    reverse_direction=True,
+)
+```
+
+`up_to_next` 由 SolidWorks 查找能截住整个轮廓的下一面。`midplane` 使用总深度并单独设置。`through_all` 用于切除。创建后重建，核对当前实体数、终止条件及实际几何，再保存检查点。
+
 ### 6. 方向、终止和拓扑验证
 
 - 自编脚本将建模和保存放入 `main()` 并用 `if __name__ == "__main__":` 保护。建模前先运行 `python -B -c "import runpy; runpy.run_path(r'脚本绝对路径')"` 检查导入与初始化。优先使用能力目录中的公共封装。

@@ -6,11 +6,14 @@ import json
 import math
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts import sw_part
-from scripts.sw_connect import connect_solidworks, get_com_member, new_document
+from scripts.sw_connect import (
+    connect_solidworks, get_com_member, new_document, open_document, save_document,
+)
 from scripts.sw_native_parametric import NativeParametric
 
 
@@ -35,9 +38,9 @@ def bounds_mm(model):
     return values
 
 
-def make_engine():
+def make_engine(sw, model):
     return NativeParametric(
-        connect=lambda: connect_solidworks(wait_seconds=1),
+        connect=lambda: (sw, model),
         part_ops=lambda: sw_part,
     )
 
@@ -67,16 +70,115 @@ def assert_feature_ok(model, feature):
         raise RuntimeError(f"Rebuild failed after {feature.Name}")
 
 
+def advanced_end_conditions(sw, created_titles, directory):
+    end = sw_part.ExtrudeEnd
+    for cut in (True, False):
+        for first, second, axial_length in (
+            ("up_to_surface", None, 20),
+            ("offset_from_surface", None, 17),
+            ("blind", "up_to_surface", 15),
+            ("up_to_surface", "offset_from_surface", 27),
+            ("up_to_next", None, 30 if cut else 20),
+        ):
+            model = new_document(sw, "part")
+            title = str(get_com_member(model, "GetTitle"))
+            created_titles.append(title)
+            checkpoint = directory / f"{title}-{cut}-{first}-{second}.sldprt"
+
+            def save_checkpoint():
+                current = str(get_com_member(model, "GetPathName") or "")
+                if not save_document(model, None if current else str(checkpoint)):
+                    raise RuntimeError("Could not save extrusion checkpoint")
+                assert checkpoint.is_file() and checkpoint.stat().st_size
+                created_titles[-1] = str(get_com_member(model, "GetTitle"))
+
+            engine = make_engine(sw, model)
+            if cut:
+                base = finished_rectangle(engine, title, 30, 20)
+                save_checkpoint()
+                base_feature = sw_part.extrude_boss_midplane(model, base["sketch"], 0.060)
+                assert_feature_ok(model, base_feature)
+                save_checkpoint()
+            front = sw_part.offset_plane(model, "Front Plane", 0.020)
+            assert_feature_ok(model, front)
+            save_checkpoint()
+            front_ref = model.FeatureByName(str(front.Name))
+            back = sw_part.offset_plane(model, "Front Plane", 0.010, reverse_direction=True)
+            assert_feature_ok(model, back)
+            save_checkpoint()
+            back_ref = model.FeatureByName(str(back.Name))
+            if cut and first == "offset_from_surface":
+                front_ref, = sw_part.find_planar_faces(model, center=(0, 0, 0.030))
+                axial_length = 27
+            if not cut and first in {"up_to_next", "offset_from_surface"} and second is None:
+                begun = engine.begin(created_titles[-1], str(front_ref.Name))
+                token = begun["session_id"]
+                engine.rectangle(token, 30, 20)
+                engine.auto_define(token)
+                engine.finish(token)
+                save_checkpoint()
+                target = sw_part.extrude_boss(model, begun["sketch"], 0.005, direction=False)
+                assert_feature_ok(model, target)
+                save_checkpoint()
+                if first == "offset_from_surface":
+                    front_ref, = sw_part.find_planar_faces(model, center=(0, 0, 0.020))
+            hole = finished_circle(engine, created_titles[-1], 3)
+            save_checkpoint()
+            initial_volume = sum(float(body.GetMassProperties(1.0)[3])
+                                 for body in model.GetBodies2(0, False) or ()) * 1e9
+
+            def make_end(condition, reference):
+                if condition == "blind":
+                    return end(condition, 0.005)
+                if condition == "up_to_next":
+                    return end(condition)
+                distance = 0.003 if condition == "offset_from_surface" else None
+                return end(condition, distance=distance, reference=reference)
+
+            feature = sw_part.extrude_feature(
+                model, hole["sketch"], make_end(first, front_ref),
+                direction2=make_end(second, back_ref) if second else None,
+                cut=cut, reverse_direction=cut,
+                merge=True,
+            )
+            assert_feature_ok(model, feature)
+            codes = {"blind": 0, "up_to_surface": 4, "offset_from_surface": 5, "up_to_next": 11}
+            definition = feature_definition(feature)
+            assert bool(get_com_member(definition, "BothDirections")) == bool(second)
+            assert int(definition.GetEndCondition(True)) == codes[first], (cut, first)
+            if second:
+                assert int(definition.GetEndCondition(False)) == codes[second], (cut, second)
+            bodies = model.GetBodies2(0, False) or ()
+            delta = sum(float(body.GetMassProperties(1.0)[3]) for body in bodies) * 1e9 - initial_volume
+            expected = math.pi * 9 * axial_length * (-1 if cut else 1)
+            assert abs(delta - expected) < 0.5, (cut, first, second, delta, expected)
+            save_checkpoint()
+            if second and first == "up_to_surface":
+                feature_name = str(feature.Name)
+                sw.QuitDoc(created_titles[-1])
+                reopened = open_document(sw, str(checkpoint), silent=True, raise_on_error=True)
+                created_titles[-1] = str(get_com_member(reopened, "GetTitle"))
+                restored = reopened.FeatureByName(feature_name)
+                assert_feature_ok(reopened, restored)
+                restored_data = feature_definition(restored)
+                assert restored_data.GetEndCondition(True) == codes[first]
+                assert restored_data.GetEndCondition(False) == codes[second]
+                assert abs(body_volume_mm3(reopened) - initial_volume - expected) < 0.5
+            print(f"PASS: cut={cut}, {first}, {second}, axial length {axial_length} mm")
+            sw.QuitDoc(created_titles.pop())
+
+
 def main() -> None:
     sw, original = connect_solidworks(wait_seconds=1)
     original_title = str(get_com_member(original, "GetTitle")) if original else None
     created_titles = []
     results = {}
+    directory = TemporaryDirectory(ignore_cleanup_errors=True)
     try:
         symmetric = new_document(sw, "part")
         symmetric_title = str(get_com_member(symmetric, "GetTitle"))
         created_titles.append(symmetric_title)
-        engine = make_engine()
+        engine = make_engine(sw, symmetric)
         base = finished_rectangle(engine, symmetric_title, 30, 20)
         boss = sw_part.extrude_boss_midplane(symmetric, base["sketch"], 0.040)
         assert_feature_ok(symmetric, boss)
@@ -120,7 +222,7 @@ def main() -> None:
         through = new_document(sw, "part")
         through_title = str(get_com_member(through, "GetTitle"))
         created_titles.append(through_title)
-        engine = make_engine()
+        engine = make_engine(sw, through)
         through_base = finished_rectangle(engine, through_title, 30, 20)
         blind_boss = sw_part.extrude_boss(
             through, through_base["sketch"], 0.040, direction=False
@@ -142,6 +244,7 @@ def main() -> None:
             "boss": str(blind_boss.Name), "cut": str(through_cut.Name),
             "volume_mm3": through_volume,
         }
+        advanced_end_conditions(sw, created_titles, Path(directory.name))
         print(json.dumps({"status": "ok", "results": results}, ensure_ascii=False))
     finally:
         for title in list(created_titles):
@@ -154,6 +257,7 @@ def main() -> None:
                 sw.ActivateDoc2(original_title, False, 0)
             except Exception:
                 pass
+        directory.cleanup()
 
 
 if __name__ == "__main__":

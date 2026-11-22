@@ -2248,6 +2248,101 @@ def extrude_cut_midplane(model, sketch_name, total_depth,
     )
 
 
+@dataclass(frozen=True)
+class ExtrudeEnd:
+    """One extrusion end. Distances are in metres and references are COM objects."""
+
+    condition: str
+    distance: float | None = None
+    reference: object | None = None
+    reverse_offset: bool = False
+
+    def __post_init__(self):
+        if self.condition not in _EXTRUDE_END_CODES:
+            raise ValueError(f"Unknown extrusion end condition: {self.condition!r}")
+        needs_distance = self.condition in {"blind", "midplane", "offset_from_surface"}
+        needs_reference = self.condition in {"up_to_surface", "offset_from_surface"}
+        if needs_distance:
+            if self.distance is None:
+                raise ValueError(f"{self.condition} requires a distance")
+            object.__setattr__(self, "distance", _positive_finite("distance", self.distance))
+        elif self.distance is not None:
+            raise ValueError(f"{self.condition} does not take a distance")
+        if needs_reference != (self.reference is not None):
+            raise ValueError(f"{self.condition} {'requires' if needs_reference else 'does not take'} a reference")
+        if self.reverse_offset and self.condition != "offset_from_surface":
+            raise ValueError("reverse_offset is only valid for offset_from_surface")
+
+
+_EXTRUDE_END_CODES = {
+    "blind": 0,
+    "through_all": 1,
+    "up_to_surface": 4,
+    "offset_from_surface": 5,
+    "midplane": 6,
+    "up_to_next": 11,
+}
+
+
+def extrude_feature(
+    model, sketch_name, direction1: ExtrudeEnd, *,
+    direction2: ExtrudeEnd | None = None, cut=False, reverse_direction=False,
+    merge=True,
+):
+    """Create a native boss or cut from a finished sketch.
+
+    Direction 2 is opposite direction 1. A mid-plane end uses the total
+    depth and stands alone. Through-all is a cut condition.
+    The default direction is along the sketch normal for a boss and
+    against it for a cut. Set reverse_direction to invert it.
+    For a surface end, pass the target face or reference-plane feature.
+    A positive surface offset defaults toward the sketch.
+    """
+    ends = (direction1, direction2) if direction2 is not None else (direction1,)
+    if any(not isinstance(end, ExtrudeEnd) for end in ends):
+        raise TypeError("Extrusion directions must be ExtrudeEnd objects")
+    if direction2 is not None and any(end.condition == "midplane" for end in ends):
+        raise ValueError("The midplane condition must be used by itself")
+    if not cut and any(end.condition == "through_all" for end in ends):
+        raise ValueError("The through_all condition requires cut=True")
+
+    model.ClearSelection2(True)
+    try:
+        _ensure_sketch_selected(model, sketch_name)
+        # SolidWorks consumes mark-1 references in direction order.
+        for end in ends:
+            if end.reference is not None and not _select_com_object_with_data(
+                model, end.reference, append=True, mark=1,
+            ):
+                raise RuntimeError(f"Could not select the {end.condition} reference")
+
+        end2 = direction2 or ExtrudeEnd("blind", 0.01)
+        arguments = (
+            direction2 is None, False, bool(reverse_direction),
+            _EXTRUDE_END_CODES[direction1.condition], _EXTRUDE_END_CODES[end2.condition],
+            direction1.distance or 0.01, end2.distance or 0.01,
+            False, False, False, False, 0.0, 0.0,
+            direction1.reverse_offset, end2.reverse_offset, False, False,
+        )
+        if cut:
+            feature = model.FeatureManager.FeatureCut4(
+                *arguments, False, True, True, True, True, False, 0, 0.0, False, False,
+            )
+        else:
+            feature = model.FeatureManager.FeatureExtrusion3(
+                *arguments, bool(merge), False, True, 0, 0.0, False,
+            )
+        conditions = " / ".join(end.condition for end in ends)
+        if not feature:
+            raise RuntimeError(f"SolidWorks returned no extrusion for {conditions}")
+        error = int(get_com_member(feature, "GetErrorCode"))
+        if error:
+            raise RuntimeError(f"Extrusion {conditions} has SolidWorks error {error}")
+        return feature
+    finally:
+        model.ClearSelection2(True)
+
+
 def _revolve_scope_flags(model, affected_bodies):
     """Select explicit revolve scope bodies and return API scope flags."""
     if affected_bodies is None:

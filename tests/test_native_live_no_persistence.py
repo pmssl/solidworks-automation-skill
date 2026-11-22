@@ -9,6 +9,7 @@ from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
 PERSISTENCE_REGRESSIONS = {
+    "native_extrude_end_conditions_live_smoke.py",
     "native_persistent_edge_vertex_topology_live_smoke.py",
     "native_persistent_reference_live_smoke.py",
 }
